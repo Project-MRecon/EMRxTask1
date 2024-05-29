@@ -1,7 +1,10 @@
 import numpy as np
+from torch.optim.swa_utils import SWALR
+import fastmri
+
 from base.base_trainer import BaseTrainer
 from utils.utils import show_3d_image, judge_log
-from torch.optim.swa_utils import SWALR
+
 
 def show_img(batch_img):
     img = batch_img[0,0].numpy()
@@ -35,7 +38,7 @@ class ReconStructionTrainer(BaseTrainer):
         return input, target, mean, std
         
     def _train_batch_step(self, batch_data, batch_idx, epoch):
-        input, target, _, _ = self._load_and_visualize_input(batch_data, batch_idx, epoch)
+        input, target, _, _ = self._load_and_visualize_input(batch_data, batch_idx, epoch, "Train")
         pred = self.model(input)
         loss = self.criterion(pred, target)
         self._update_metrics(pred, target)
@@ -45,7 +48,7 @@ class ReconStructionTrainer(BaseTrainer):
         return loss
     
     def _valid_batch_step(self, batch_data, batch_idx, epoch):
-        input, target, mean, std = self._load_and_visualize_input(batch_data, batch_idx, epoch)
+        input, target, mean, std = self._load_and_visualize_input(batch_data, batch_idx, epoch, "Valid")
         # 上级函数已经有@torch.no_grad()
         pred = self.model(input)
         # calulate loss
@@ -58,16 +61,45 @@ class ReconStructionTrainer(BaseTrainer):
 
 
 class KspaceTrainer(BaseTrainer):
-    # 未完待续
+    '''
+    还未测试
+    如何把不同模态的不同大小的K空间变成一致大小放到一个batch里训练
+    crop?pad?一个模态一个dataloader再合并?
+    '''
     def __init__(self, plans, data_loader, valid_data_loader=None):
         super().__init__(plans, data_loader, valid_data_loader)
         self.writer_step = 2
 
+    def Kspace2Image(self, kspace):
+        return fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace)))
+
     def _load_and_visualization_input(self, batch_data, batch_idx, epoch, split):
         masked_kspace, mask, num_low_frequencies, kspace = (
             batch_data["masked_kspace"],
-            batch_data["mask"],
-            batch_data["num_low_frequencies"],
+            batch_data["mask"].to(self.device),
+            batch_data["num_low_frequencies"].to(self.device),
             batch_data["kspace"]
         )
-        return super()._load_and_visualization_input()
+        undersample_img, target = self.Kspace2Image(masked_kspace), self.Kspace2Image(kspace)
+        if judge_log(self.is_ddp) and batch_idx % self.writer_step == 0:
+            step = epoch*self.len_epoch+(batch_idx // self.writer_step)
+            self.writer.add_image(f"{split}/Undersample_img", show_img(undersample_img), step, dataformats="HW")
+            self.writer.add_image(f"{split}/Target", show_img(target), step, dataformats="HW")
+
+        return masked_kspace, mask, num_low_frequencies, target
+    
+    def _train_batch_step(self, batch_data, batch_idx, epoch):
+        masked_kspace, mask, num_low_frequencies, target = self._load_and_visualize_input(batch_data, batch_idx, epoch, "Train")
+        pred = self.model(masked_kspace, mask, num_low_frequencies)
+        loss = self.criterion(pred, target) # calulate loss
+        self._update_metrics(pred, target) # calulate metrics
+        return loss
+    
+    def _valid_batch_step(self, batch_data, batch_idx, epoch):
+        masked_kspace, mask, num_low_frequencies, target = self._load_and_visualize_input(batch_data, batch_idx, epoch, "Valid")
+        # 上级函数已经有@torch.no_grad()
+        pred = self.model(masked_kspace, mask, num_low_frequencies)
+        # calulate loss
+        loss = self.criterion(pred, target)
+        self._update_metrics(pred, target)
+        return loss

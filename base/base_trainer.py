@@ -1,21 +1,21 @@
-import torch
 from abc import abstractmethod
-from numpy import inf
-from tensorboardX import SummaryWriter
-from utils.utils import EarlyStopping
 import logging
 import time
 import os
 from pathlib import Path
-join = os.path.join
-from torch.nn.parallel import DistributedDataParallel as DDP
-import models
-from utils.utils import judge_log
-from models.lr_scheduler import PolyLRScheduler
-from tqdm import tqdm
-from models import loss
-import torch.distributed as dist
 
+import torch
+from tensorboardX import SummaryWriter
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
+from tqdm import tqdm
+
+
+import models
+from utils.utils import judge_log, EarlyStopping
+from models.lr_scheduler import PolyLRScheduler
+
+join = os.path.join
 
 
 class BaseTrainer(object):
@@ -46,7 +46,7 @@ class BaseTrainer(object):
         self.lr_scheduler = PolyLRScheduler(self.optimizer, plans.optimizer["args"]["lr"], self.epochs)
 
         # loss
-        self.criterion = getattr(loss, plans.criterion)()
+        self.criterion = getattr(models.loss, plans.criterion)()
 
         # configuration to monitor model performance and save best
         self._init_logger()
