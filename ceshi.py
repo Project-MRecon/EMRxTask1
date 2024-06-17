@@ -1,2 +1,2 @@
-from fastmri.data.subsample import create_mask_for_mask_type
-import fastmri.data.transforms
+from pathlib import Path
+print(Path("/homes/MRIData").is_dir())

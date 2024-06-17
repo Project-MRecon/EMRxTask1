@@ -73,6 +73,27 @@ def generate_train_val_ds(plans_args):
         )
     return train_ds, val_ds, plans_args
 
+
+def kspace_dataset():
+    train_transform = Compose([
+        LoadImaged(keys=["kspace", "mask"], image_only=True),
+        EnsureChannelFirstd(keys=["kspace_masked_ifft", "reconstruction_rss"]),
+        BackUp(keys=["kspace_masked_ifft", "reconstruction_rss"]),
+        #ReferenceBasedSpatialCropd(keys=["kspace_masked_ifft"], ref_key="reconstruction_rss"), 大小本来就一致，没必要裁剪
+        CenterSpatialCropd(keys=["kspace_masked_ifft", "reconstruction_rss",
+                                "kspace_masked_ifft_copy", "reconstruction_rss_copy"], roi_size=[162, 512]),
+        ReferenceBasedNormalizeIntensityd(
+            keys=["kspace_masked_ifft", "reconstruction_rss"], ref_key="kspace_masked_ifft", channel_wise=True
+        ),
+        ThresholdIntensityd(
+            keys=["kspace_masked_ifft", "reconstruction_rss"], threshold=6.0, above=False, cval=6.0
+        ),
+        ThresholdIntensityd(
+            keys=["kspace_masked_ifft", "reconstruction_rss"], threshold=-6.0, above=True, cval=-6.0
+        ),
+        EnsureTyped(keys=["kspace_masked_ifft", "reconstruction_rss"]),
+        ])
+
 def test():
     import argparse
     with open("/homes/syli/python/CMRxRecon2024/config/base.json") as f:
