@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from torch.optim.swa_utils import SWALR
 import fastmri
 
@@ -71,26 +72,31 @@ class KspaceTrainer(BaseTrainer):
         self.writer_step = 2
 
     def Kspace2Image(self, kspace):
-        return fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace)))
+        return fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace)), dim=1)
 
-    def _load_and_visualization_input(self, batch_data, batch_idx, epoch, split):
-        masked_kspace, mask, num_low_frequencies, kspace = (
-            batch_data["masked_kspace"],
-            batch_data["mask"].to(self.device),
+    def _load_and_visualize_input(self, batch_data, batch_idx, epoch, split):
+        kspace, mask, num_low_frequencies, target= (
+            batch_data["kspace"].to(self.device),
+            batch_data["mask"].to(self.device).transpose(1,2).unsqueeze(1),
             batch_data["num_low_frequencies"].to(self.device),
-            batch_data["kspace"]
+            batch_data["reconstruction_rss"].to(self.device)
         )
-        undersample_img, target = self.Kspace2Image(masked_kspace), self.Kspace2Image(kspace)
-        if judge_log(self.is_ddp) and batch_idx % self.writer_step == 0:
-            step = epoch*self.len_epoch+(batch_idx // self.writer_step)
-            self.writer.add_image(f"{split}/Undersample_img", show_img(undersample_img), step, dataformats="HW")
-            self.writer.add_image(f"{split}/Target", show_img(target), step, dataformats="HW")
+        kspaces = [kspace[:,i,...] for i in range(5)]
+        kspace = torch.concatenate(kspaces, dim=1)
+        masked_kspace = kspace * mask
+        masked_kspace = torch.stack((masked_kspace.real, masked_kspace.imag), axis=-1)
+        # undersample_img, target = self.Kspace2Image(masked_kspace), self.Kspace2Image(kspace)
+        # if judge_log(self.is_ddp) and batch_idx % self.writer_step == 0:
+        #     step = epoch*self.len_epoch+(batch_idx // self.writer_step)
+        #     self.writer.add_image(f"{split}/Undersample_img", show_img(undersample_img), step, dataformats="HW")
+        #     self.writer.add_image(f"{split}/Target", show_img(target), step, dataformats="HW")
 
-        return masked_kspace, mask, num_low_frequencies, target
+
+        return masked_kspace.float(), mask.float(), num_low_frequencies, target.float()
     
     def _train_batch_step(self, batch_data, batch_idx, epoch):
         masked_kspace, mask, num_low_frequencies, target = self._load_and_visualize_input(batch_data, batch_idx, epoch, "Train")
-        pred = self.model(masked_kspace, mask, num_low_frequencies)
+        pred = self.model(masked_kspace, mask, 16)
         loss = self.criterion(pred, target) # calulate loss
         self._update_metrics(pred, target) # calulate metrics
         return loss
@@ -98,7 +104,7 @@ class KspaceTrainer(BaseTrainer):
     def _valid_batch_step(self, batch_data, batch_idx, epoch):
         masked_kspace, mask, num_low_frequencies, target = self._load_and_visualize_input(batch_data, batch_idx, epoch, "Valid")
         # 上级函数已经有@torch.no_grad()
-        pred = self.model(masked_kspace, mask, num_low_frequencies)
+        pred = self.model(masked_kspace, mask, 16)
         # calulate loss
         loss = self.criterion(pred, target)
         self._update_metrics(pred, target)

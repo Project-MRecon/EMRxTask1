@@ -1,15 +1,16 @@
 import os
 import argparse
 
+import json
 import torch
 import torch.distributed as dist
 from torch.optim.swa_utils import AveragedModel  # 随机权重平均
 from monai.data import DataLoader
 
-from trainer.reconstruction_trainer import ReconStructionTrainer
+from trainer.reconstruction_trainer import ReconStructionTrainer, KspaceTrainer
 from utils.ddp_utils import init_distributed_mode
 from utils.utils import init_seeds
-from dataloading.generate_dataset import generate_train_val_ds
+from dataloading.generate_dataset import generate_train_val_ds, kspace_dataset
 join = os.path.join
 
 
@@ -36,7 +37,7 @@ def main(plans_args):
     else:
         init_seeds(seed=SEED+plans_args.rank)
 
-    train_ds, val_ds, plans_args = generate_train_val_ds(plans_args)
+    train_ds, val_ds, plans_args = kspace_dataset(plans_args)
 
     # dataloader总得设置一下吧
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds) \
@@ -53,7 +54,7 @@ def main(plans_args):
         batch_size=plans_args.batch_size, num_workers=8,
         sampler=val_sampler, pin_memory=True)
 
-    trainer = ReconStructionTrainer(
+    trainer = KspaceTrainer(
         plans=plans_args,
         data_loader=train_dataloader,
         valid_data_loader=val_dataloader,
@@ -65,32 +66,8 @@ def main(plans_args):
 
 
 if __name__ == '__main__':
-    config = {
-        "json_path": "/homes/syli/dataset/MultiCoil/test/test.json",
-        "resume": None,  # "./saved/model/0807_1536/checkpoint-epoch48.pth"
-        "epochs": 100,
-        "save_dir": "./saved",
-        'network': {"arch": "BasicUNet",
-                    "args": {"spatial_dims": 2,
-                            "in_channels": 1,
-                            "out_channels": 1,
-        "features": [32, 64, 128, 256, 512, 32],}},
-        "optimizer": {
-            "type": "Adam",
-            "args": {
-                "lr": 1e-2,
-                "weight_decay": 1e-4,
-                }},
-        "batch_size": 4,
-        "valid_interval": 2,
-        "standard": "SSIM",
-        "Metrics": {
-            "SSIM": {"spatial_dims": 2,
-                            "data_range": 6}},
-        "early_stopping": 20,
-        "criterion": "L1Loss",
-        "use_amp": True
-    }
+    with open("/homes/syli/python/CMRxRecon2024/config/promptmr.json") as f:
+        config = json.load(f)
 
     plans_args = argparse.Namespace(**config)
     plans_args.config = config

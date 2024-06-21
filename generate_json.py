@@ -14,6 +14,8 @@ def generate_list(data_path: Path, data_list: list):
     for case in img_path.iterdir():
         case_mask_path = mask_path / case.name
         for file in case.iterdir():
+            if "cine_lax" not in file.name:
+                continue
             for method in acceleration_methods:
                 for factor in acceleration_factors:
                     single_sample = {}

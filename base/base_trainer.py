@@ -46,7 +46,12 @@ class BaseTrainer(object):
         self.lr_scheduler = PolyLRScheduler(self.optimizer, plans.optimizer["args"]["lr"], self.epochs)
 
         # loss
-        self.criterion = getattr(models.loss, plans.criterion)()
+        loss_name, loss_args = plans.criterion.popitem()
+        criterion_class = getattr(models.loss, loss_name)
+        if loss_args is not None:
+            self.criterion = criterion_class(**loss_args)
+        else:
+            self.criterion = criterion_class()
 
         # configuration to monitor model performance and save best
         self._init_logger()

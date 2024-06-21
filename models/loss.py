@@ -5,6 +5,8 @@ import torch
 import numpy as np
 from monai.losses.dice import DiceLoss
 from models.registry import LOSSES
+from monai.losses import SSIMLoss
+
 
 
 def nll_loss(output, target):

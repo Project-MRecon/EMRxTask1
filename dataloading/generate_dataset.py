@@ -1,4 +1,6 @@
 import json
+from pathlib import Path
+import argparse
 from monai.transforms import (
     Compose,
     EnsureChannelFirstd,
@@ -12,10 +14,13 @@ from monai.transforms import (
     ThresholdIntensityd,
     CenterSpatialCropd,
 )
+import sys
+sys.path.append("/homes/syli/python/CMRxRecon2024")
 from monai.data import CacheDataset
-from utils.Transform import BackUp
+from utils.Transform import BackUp, Loadh5
 from monai.apps.reconstruction.transforms.dictionary import ReferenceBasedNormalizeIntensityd
 from utils.utils import init_seeds, record_transform
+
 
 def generate_train_val_ds(plans_args):
     train_transform = Compose([
@@ -74,25 +79,15 @@ def generate_train_val_ds(plans_args):
     return train_ds, val_ds, plans_args
 
 
-def kspace_dataset():
-    train_transform = Compose([
-        LoadImaged(keys=["kspace", "mask"], image_only=True),
-        EnsureChannelFirstd(keys=["kspace_masked_ifft", "reconstruction_rss"]),
-        BackUp(keys=["kspace_masked_ifft", "reconstruction_rss"]),
-        #ReferenceBasedSpatialCropd(keys=["kspace_masked_ifft"], ref_key="reconstruction_rss"), 大小本来就一致，没必要裁剪
-        CenterSpatialCropd(keys=["kspace_masked_ifft", "reconstruction_rss",
-                                "kspace_masked_ifft_copy", "reconstruction_rss_copy"], roi_size=[162, 512]),
-        ReferenceBasedNormalizeIntensityd(
-            keys=["kspace_masked_ifft", "reconstruction_rss"], ref_key="kspace_masked_ifft", channel_wise=True
-        ),
-        ThresholdIntensityd(
-            keys=["kspace_masked_ifft", "reconstruction_rss"], threshold=6.0, above=False, cval=6.0
-        ),
-        ThresholdIntensityd(
-            keys=["kspace_masked_ifft", "reconstruction_rss"], threshold=-6.0, above=True, cval=-6.0
-        ),
-        EnsureTyped(keys=["kspace_masked_ifft", "reconstruction_rss"]),
-        ])
+def kspace_dataset(plans_args):
+    train_data = [str(i) for i in Path(plans_args.json_path).iterdir()]
+    loader = Loadh5()
+    train_ds = CacheDataset(
+        data=train_data,
+        transform=loader,
+        cache_rate=0
+    )
+    return train_ds, train_ds, plans_args
 
 def test():
     import argparse
@@ -107,13 +102,24 @@ def test():
 
 
 if __name__ == "__main__":
-    import argparse
-    with open("/homes/syli/python/CMRxRecon2024/config/base.json") as f:
+    import torch
+    with open("/homes/syli/python/CMRxRecon2024/config/promptmr.json") as f:
         config = json.load(f)
-    
+
     plans_args = argparse.Namespace(**config)
     plans_args.config = config
-    train_ds, val_ds, _ = generate_train_val_ds(plans_args)
-    for i, j in zip(train_ds, val_ds):
-        print(i.keys, j.keys)
+    train_ds, _, _ = kspace_dataset(plans_args)
+    kspaces, masks = [], []
+    for i in train_ds:
+        print(i["kspace"].shape)
+        print(i["mask"].shape)
+        kspaces.append(i["kspace"])
+        masks.append(i["mask"])
+
+        
+    x1, x2 = torch.stack(kspaces), torch.stack(masks)
+    from models import PromptMR
+    net = PromptMR()
+    output = i[1]
+
 

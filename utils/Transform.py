@@ -48,17 +48,9 @@ class Loadh5(Transform):
     def __call__(self, path: Any):
         d = dict()
         with h5py.File(path, "r") as file:
-            d["name"] = path.name[:-5]
-            d["parnet"] = str(path.parent)
             for key,val in file.items():
                 if type(val) == h5py._hl.dataset.Dataset:
-                    d[key] = val[:]
-        if len(d["img_embedding"].shape) != 3:
-            d["img_embedding"] = d["img_embedding"][0]
-        if "label" not in d.keys():
-            return d
-        if len(d["label"].shape) == 2:
-            d["label"] = d["label"][None, :, :]
+                    d[key] = np.array(val)
         return d
     
 class Loadh5_v2(Transform):
